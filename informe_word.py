@@ -73,3 +73,55 @@ def generar_informe(texto, resultados: Dict[str, Any], incong):
 
     # RESUMEN ICI
     agregar_titulo(doc, "1. RESUMEN DEL ÍNDICE DE COHERENCIA INDICIARIA", size=14)
+    # Extraer datos del dict de resultados
+    criterios = resultados.get("criterios", {}) if isinstance(resultados, dict) else {}
+    ici_sin = resultados.get("ICI_sin_penalizacion", None) if isinstance(resultados, dict) else None
+    ici_aj = resultados.get("ICI_ajustado", None) if isinstance(resultados, dict) else None
+    interpretacion = resultados.get("interpretacion", "") if isinstance(resultados, dict) else ""
+
+    if ici_sin is not None:
+        agregar_parrafo(doc, f"ICI sin penalización: {ici_sin}", bold=True)
+    if ici_aj is not None:
+        agregar_parrafo(doc, f"ICI ajustado: {ici_aj}", bold=True)
+
+    agregar_parrafo(doc, "")
+    agregar_parrafo(doc, "Interpretación:", bold=True)
+    if interpretacion:
+        agregar_parrafo(doc, interpretacion)
+    else:
+        agregar_parrafo(doc, "No se ha generado una interpretación cualitativa.")
+
+    # SECCIÓN 2: CRITERIOS C1–C12
+    doc.add_page_break()
+    agregar_titulo(doc, "2. DETALLE DE CRITERIOS C1 – C12", size=14)
+    agregar_parrafo(doc, "Puntajes asignados a cada criterio de coherencia indiciaria.")
+    agregar_tabla_criterios(doc, criterios)
+
+    # SECCIÓN 3: INCONGRUENCIAS
+    doc.add_page_break()
+    agregar_titulo(doc, "3. INCONGRUENCIAS DETECTADAS", size=14)
+    agregar_incongruencias(doc, incong)
+
+    # SECCIÓN 4: NOTAS METODOLÓGICAS
+    doc.add_page_break()
+    agregar_titulo(doc, "4. NOTAS METODOLÓGICAS", size=14)
+    agregar_parrafo(
+        doc,
+        "Este sistema evalúa la coherencia indiciaria mediante reglas heurísticas y patrones "
+        "lingüísticos inspirados en el método indiciario. El resultado NO sustituye el juicio "
+        "crítico del abogado defensor ni del tribunal, sino que ofrece un mapa de riesgos "
+        "argumentativos para orientar la revisión humana.",
+    )
+    agregar_parrafo(
+        doc,
+        "Se recomienda revisar especialmente los criterios con puntajes bajos (por debajo de 60), "
+        "así como las incongruencias lógicas, saltos probatorios y contradicciones internas "
+        "identificadas por el sistema.",
+    )
+
+    # GENERAR BYTES DEL DOCUMENTO PARA STREAMLIT
+    buffer = BytesIO()
+    doc.save(buffer)
+    buffer.seek(0)
+    return buffer.getvalue()
+
