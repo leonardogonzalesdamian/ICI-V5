@@ -829,7 +829,18 @@ def detectar_incongruencias(parrafos: List[Dict[str, Any]]) -> List[Dict[str, An
 # 5. Función principal
 # -------------------
 
-def analizar_incongruencias(texto: str) -> List[Dict[str, Any]]:
+from typing import Dict  # ya lo tienes arriba, si aparece dos veces no pasa nada, pero puedes omitirlo si quieres
+
+def analizar_incongruencias(texto: str, resultados: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    """
+    Función principal llamada por la app de Streamlit.
+
+    - texto: sentencia completa (obligatorio)
+    - resultados: dict devuelto por evaluar_todo (opcional, por ahora no se usa)
+
+    Por ahora usamos únicamente el texto y aplicamos las REGLAS 1–9
+    ya implementadas en este módulo.
+    """
     if not texto or not texto.strip():
         return []
     parrafos = segmentar_parrafos(texto)
