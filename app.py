@@ -1,140 +1,133 @@
-# app.py
-# ---------------------------------------------------------
-# Sistema de Auditoría Indiciaria (ICI) – Versión 5
-# ---------------------------------------------------------
-# Interfaz en Streamlit para:
-#   - Cargar sentencias (PDF / Word)
-#   - O pegar texto directamente
-#   - Limpiar el texto
-#   - Evaluar C1–C12 e Índice de Coherencia Indiciaria (ICI)
-# ---------------------------------------------------------
-
 import streamlit as st
-from io import StringIO
+import tempfile
+import traceback
+from pathlib import Path
 
-from extractores import leer_pdf, leer_word, limpiar_texto
-from evaluador import evaluar_texto
+# Importamos tus módulos internos
+from extractores import leer_pdf, leer_word
+from evaluador import evaluar_todo
+from incongruencias import analizar_incongruencias
+from informe_word import generar_informe
 
-st.set_page_config(
-    page_title="Sistema de Auditoría Indiciaria (ICI) – Versión 5",
-    layout="wide"
+
+# ==============================
+#   INTERFAZ PRINCIPAL
+# ==============================
+
+st.title("📘 Sistema de Auditoría Indiciaria - ICI V5")
+st.write("Evaluación automática de sentencias y resoluciones judiciales (C1–C12).")
+
+
+# ==============================
+#   OPCIÓN DE INGRESO DE TEXTO
+# ==============================
+
+opcion = st.radio(
+    "¿Cómo deseas ingresar la sentencia o resolución a analizar?",
+    ("Subir archivo PDF/Word", "Pegar texto manualmente")
 )
 
-st.title("Sistema de Auditoría Indiciaria (ICI) – Versión 5")
-st.caption(
-    "Herramienta experimental para evaluar la calidad del razonamiento indiciario "
-    "en sentencias y resoluciones penales, basada en los criterios C1–C12 y en un "
-    "Índice de Coherencia Indiciaria (ICI) ponderado."
-)
+texto_bruto = ""
 
-st.markdown(
-    """
-    **Advertencia:**  
-    Este sistema no sustituye el análisis jurídico humano.  
-    Ofrece una auditoría automática de patrones textuales asociados al método de prueba indiciaria, 
-    máximas de experiencia, control de sesgos y coherencia global del razonamiento.
-    """
-)
 
-st.write("---")
+# ==============================
+#   OPCIÓN 1: SUBIR ARCHIVO
+# ==============================
 
-col_izq, col_der = st.columns([1.1, 1])
+if opcion == "Subir archivo PDF/Word":
 
-with col_izq:
-    st.subheader("1. Ingreso del documento")
-
-    opcion = st.radio(
-        "¿Cómo deseas ingresar la sentencia o resolución a analizar?",
-        ("Subir archivo PDF/Word", "Pegar texto manualmente")
+    archivo = st.file_uploader(
+        "Sube aquí el archivo de la sentencia (PDF o Word):",
+        type=["pdf", "docx", "doc"]
     )
 
-    texto_bruto = ""
+    if archivo is not None:
+        st.info("📄 Archivo recibido, procesando…")
 
-    if opcion == "Subir archivo PDF/Word":
-        archivo = st.file_uploader(
-            "Sube aquí el archivo de la sentencia (PDF o Word):",
-            type=["pdf", "docx", "doc"]
-        )
-
-        if archivo is not None:
-            nombre = archivo.name.lower()
-            try:
-                if nombre.endswith(".pdf"):
-                    texto_bruto = leer_pdf(archivo)
-                elif nombre.endswith(".docx") or nombre.endswith(".doc"):
-                    texto_bruto = leer_word(archivo)
-                else:
-                    st.error("Formato de archivo no reconocido.")
-
-                if texto_bruto:
-                    st.success("Archivo cargado correctamente.")
-                    with st.expander("Ver texto bruto extraído (opcional)"):
-                        st.text_area(
-                            "Texto bruto extraído",
-                            value=texto_bruto,
-                            height=200
-                        )
-            except Exception as e:
-                st.error(f"Ocurrió un error leyendo el archivo: {e}")
-    else:
-        texto_bruto = st.text_area(
-            "Pega aquí el texto de la sentencia o resolución:",
-            height=250,
-            placeholder=(
-                "Pega la parte relevante de la sentencia "
-                "(considerandos, fundamentos, motivación indiciaria, etc.)"
-            )
-        )
-
-    texto_limpio = ""
-    if texto_bruto:
         try:
-            texto_limpio = limpiar_texto(texto_bruto)
-        except Exception:
-            texto_limpio = texto_bruto
+            # Aseguramos puntero al inicio
+            archivo.seek(0)
 
-    st.write("")
-    analizar = st.button("Analizar coherencia indiciaria (C1–C12)", type="primary")
+            nombre = archivo.name.lower()
 
-with col_der:
-    st.subheader("2. Resultados del análisis")
+            # Detectamos el tipo de archivo
+            if nombre.endswith(".pdf"):
+                texto_bruto = leer_pdf(archivo)
 
-    if analizar:
-        if not texto_limpio.strip():
-            st.warning("No hay texto para analizar. Sube un archivo o pega contenido antes de presionar el botón.")
-        else:
-            try:
-                resultados = evaluar_texto(texto_limpio)
-            except Exception as e:
-                st.error(f"Error al evaluar el texto: {e}")
+            elif nombre.endswith(".docx") or nombre.endswith(".doc"):
+                texto_bruto = leer_word(archivo)
+
             else:
-                criterios = resultados.get("criterios", {})
-                ici_sin = resultados.get("ICI_sin_penalizacion", 0.0)
-                ici_aj = resultados.get("ICI_ajustado", 0.0)
-                interpretacion = resultados.get("interpretacion", "")
+                st.error("❌ Formato de archivo no reconocido.")
+                st.stop()
 
-                st.markdown("### Resultados por criterio (C1–C12)")
-                st.json(criterios)
+            st.success("✔ Texto extraído correctamente.")
 
-                st.write("")
-                st.markdown("### Índice de Coherencia Indiciaria (ICI) global")
+        except Exception:
+            st.error("❌ Ocurrió un error al leer el archivo.")
+            st.code(traceback.format_exc())
+            st.stop()
 
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.metric("ICI ajustado", f"{ici_aj:.2f}")
-                with c2:
-                    st.metric("ICI sin penalización por C5", f"{ici_sin:.2f}")
-                with c3:
-                    st.metric("C5 (hipótesis alternativas)", f"{criterios.get('C5', 0)}")
 
-                st.write("")
-                st.markdown("**Interpretación:** " + interpretacion)
+# ==============================
+#   OPCIÓN 2: PEGAR TEXTO
+# ==============================
 
-                st.info(
-                    "Nota metodológica: la Versión 5 incorpora, además de los criterios clásicos de la prueba indiciaria, "
-                    "el uso de máximas de experiencia (C8), el control de sesgos y estereotipos (C9), la detección de "
-                    "falacias probatorias (C10), el análisis de cadenas inferenciales (C11) y la diferenciación entre "
-                    "doctrina citada y aplicación al caso concreto (C12)."
-                )
-    else:
-        st.write("Cuando cargues o pegues una sentencia, presiona el botón de análisis para ver los resultados.")
+if opcion == "Pegar texto manualmente":
+
+    texto_bruto = st.text_area(
+        "Pega aquí el texto completo de la sentencia o resolución:",
+        height=300
+    )
+
+    if texto_bruto.strip() == "":
+        st.warning("⚠ Por favor ingresa el texto para continuar.")
+        st.stop()
+
+
+# ==============================
+#   BOTÓN PARA INICIAR ANÁLISIS
+# ==============================
+
+if st.button("🔍 Iniciar análisis indiciario"):
+
+    if texto_bruto.strip() == "":
+        st.error("❌ No hay texto para analizar.")
+        st.stop()
+
+    st.info("🧠 Procesando… esto puede tardar unos segundos.")
+
+    try:
+        # 1. Evaluación completa (C1–C12)
+        resultados = evaluar_todo(texto_bruto)
+        st.success("✔ Evaluación completada.")
+
+        # 2. Análisis de incongruencias
+        incong = analizar_incongruencias(texto_bruto, resultados)
+        st.success("✔ Análisis de incongruencias completado.")
+
+        # 3. Mostrar resultados en pantalla
+        st.subheader("📊 Resultados del Análisis (C1–C12)")
+        st.json(resultados)
+
+        st.subheader("🧩 Incongruencias detectadas")
+        st.json(incong)
+
+        # 4. Generación del informe Word
+        st.info("📑 Generando informe en Word…")
+
+        docx_bytes = generar_informe(texto_bruto, resultados, incong)
+
+        st.success("✔ Informe generado correctamente.")
+
+        st.download_button(
+            "⬇ Descargar Informe ICI-V5 (Word)",
+            data=docx_bytes,
+            file_name="Informe_Indiciario_ICI-V5.docx",
+            mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        )
+
+    except Exception:
+        st.error("❌ Ocurrió un error durante el análisis.")
+        st.code(traceback.format_exc())
+        st.stop()
