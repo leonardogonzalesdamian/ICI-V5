@@ -1,43 +1,83 @@
+from io import BytesIO
+from typing import Dict, Any, List
+
 from docx import Document
 from docx.shared import Pt
 
-def generar_informe_word(buffer, criterios, ici_global, incongruencias):
 
-    doc = Document()
+def _agregar_titulo(doc: Document, texto: str, size: int = 16, negrita: bool = True):
+    """
+    Utilidad sencilla para añadir títulos al documento.
+    """
+    p = doc.add_paragraph()
+    run = p.add_run(texto)
+    run.bold = negrita
+    run.font.size = Pt(size)
 
-    # Título
-    doc.add_heading("Informe de Auditoría Indiciaria (ICI) – Versión 3", level=1)
-    doc.add_paragraph(f"Índice ICI Global: {ici_global:.2f}")
 
-    # Tabla criterios
-    doc.add_heading("Resultados por criterio C1–C7", level=2)
-    table = doc.add_table(rows=1, cols=2)
-    hdr = table.rows[0].cells
-    hdr[0].text = "Criterio"
-    hdr[1].text = "Puntaje"
+def _agregar_parrafo(doc: Document, texto: str, size: int = 11, negrita: bool = False):
+    """
+    Añade un párrafo de texto normal.
+    """
+    p = doc.add_paragraph()
+    run = p.add_run(texto)
+    run.bold = negrita
+    run.font.size = Pt(size)
 
-    for c, v in criterios.items():
-        row = table.add_row().cells
-        row[0].text = c
-        row[1].text = str(v)
 
-    # Incongruencias
-    doc.add_heading("Incongruencias detectadas (Reglas 1–9)", level=2)
+def _agregar_tabla_criterios(doc: Document, criterios: Dict[str, int]):
+    """
+    Construye una tabla con los criterios C1–C12 y sus puntajes.
+    """
+    if not criterios:
+        _agregar_parrafo(doc, "No se encontraron criterios para mostrar.")
+        return
 
-    if not incongruencias:
-        doc.add_paragraph("No se detectaron incongruencias relevantes.")
+    tabla = doc.add_table(rows=1, cols=2)
+    tabla.style = "Table Grid"
+
+    hdr_cells = tabla.rows[0].cells
+    hdr_cells[0].text = "Criterio"
+    hdr_cells[1].text = "Puntaje (0–100)"
+
+    for clave, valor in criterios.items():
+        row_cells = tabla.add_row().cells
+        row_cells[0].text = str(clave)
+        row_cells[1].text = str(valor)
+
+
+def _agregar_seccion_incongruencias(doc: Document, incong: Any):
+    """
+    Escribe las incongruencias encontradas, si las hay.
+    `incong` puede ser lista, dict o texto.
+    """
+    if not incong:
+        _agregar_parrafo(doc, "No se registran incongruencias específicas reportadas por el sistema.")
+        return
+
+    if isinstance(incong, str):
+        _agregar_parrafo(doc, incong)
+    elif isinstance(incong, list):
+        for i, item in enumerate(incong, start=1):
+            _agregar_parrafo(doc, f"{i}. {item}")
+    elif isinstance(incong, dict):
+        for clave, valor in incong.items():
+            _agregar_parrafo(doc, f"- {clave}: {valor}")
     else:
-        for i, inc in enumerate(incongruencias, start=1):
-            doc.add_heading(f"{i}. {inc['tipo']}", level=3)
-            doc.add_paragraph(f"Párrafos: {', '.join(str(n) for n in inc['parrafos'])}")
-            doc.add_paragraph(inc["detalle"])
+        _agregar_parrafo(doc, str(incong))
 
-            if inc.get("extractos"):
-                for ex in inc["extractos"]:
-                    p = doc.add_paragraph()
-                    run = p.add_run(ex)
-                    run.italic = True
-                    run.font.size = Pt(10)
 
-    doc.save(buffer)
-    buffer.seek(0)
+def generar_informe(texto: str, resultados: Dict[str, Any], incong: Any) -> bytes:
+    """
+    FUNCIÓN PRINCIPAL que usa la app de Streamlit.
+
+    Recibe:
+    - texto: texto completo de la sentencia analizada.
+    - resultados: diccionario devuelto por `evaluar_todo`, con:
+        {
+            "criterios": { "C1": ..., ..., "C12": ... },
+            "ICI_sin_penalizacion": ...,
+            "ICI_ajustado": ...,
+            "interpretacion": ...
+        }
+    - incong: resu
